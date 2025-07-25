@@ -1,23 +1,50 @@
 # Scrible Wise
 
-An audio transcription tool based on Whisper models that converts long audio files into Chinese transcripts.
+An audio transcription tool based on Whisper models that converts long audio files into Chinese transcripts, with support for WebM video to MP3 conversion.
 
 ## Features
 
+### Audio Transcription
 - Supports various audio formats including MP3
 - Uses MediaTek Breeze-ASR-25 model for Chinese speech recognition
 - Automatic chunking for long audio files (30-second segments)
 - Supports Apple Silicon (MPS) and CPU computation
 - Complete transcription results saved as text files
 
+### WebM to MP3 Conversion (New)
+- Convert WebM video files to MP3 audio format
+- Multiple quality levels (Low: 128k, Medium: 160k, High: 256k bitrate)
+- Async processing with timeout handling
+- FFmpeg integration with cross-platform support
+- Audio file validation with detailed reporting
+
 ## System Requirements
 
 - Python 3.13+
+- FFmpeg (for video to audio conversion)
 - macOS (Apple Silicon recommended for better performance)
 - Sufficient memory to load Whisper models
 
 ## Installation
 
+### Install FFmpeg
+First, install FFmpeg for video conversion:
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+**Windows:**
+Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+
+### Install Python Dependencies
 Install dependencies using `uv`:
 
 ```bash
@@ -32,11 +59,39 @@ uv sync --extra dev
 
 ## Usage
 
+### Audio Transcription
 1. Name your audio file `meeting.mp3` and place it in the project root directory
 2. Run the transcription program:
 
 ```bash
 uv run python main.py
+```
+
+### WebM to MP3 Conversion
+The tool supports converting WebM video files to MP3 audio format before transcription:
+
+```python
+from converters.media_converter import MediaConverter, QualityLevel
+from validators.audio_validator import AudioValidator
+from utils.ffmpeg_checker import FFmpegChecker
+from utils.file_detector import FileTypeDetector
+
+# Check FFmpeg installation
+ffmpeg_checker = FFmpegChecker()
+if not ffmpeg_checker.check_ffmpeg_installation():
+    raise RuntimeError("FFmpeg not found. Please install FFmpeg first.")
+
+# Detect file type
+detector = FileTypeDetector()
+file_type = detector.detect_file_type("input.webm")
+
+# Convert WebM to MP3
+converter = MediaConverter(quality=QualityLevel.MEDIUM)
+result = await converter.convert_webm_to_mp3("input.webm", "output.mp3")
+
+# Validate converted audio
+validator = AudioValidator()
+validation_result = validator.validate_audio_file("output.mp3")
 ```
 
 ## Development
@@ -104,9 +159,31 @@ The hooks will automatically:
 ## Technical Architecture
 
 - **Audio Processing**: `torchaudio` + `soundfile`
+- **Video Conversion**: FFmpeg via `ffmpeg-python`
 - **Speech Recognition**: Hugging Face Transformers Whisper
 - **Hardware Acceleration**: Apple MPS (Metal Performance Shaders)
 - **Package Management**: `uv`
+- **Testing**: pytest with asyncio support
+- **Code Quality**: ruff, black, isort, mypy
+
+### Module Structure
+
+```
+scrible-wise/
+├── main.py                    # Main transcription program
+├── converters/                # Media conversion modules
+│   └── media_converter.py     # WebM to MP3 converter
+├── validators/                # Audio validation modules
+│   └── audio_validator.py     # Audio file validator
+├── utils/                     # Utility modules
+│   ├── ffmpeg_checker.py      # FFmpeg dependency checker
+│   └── file_detector.py       # File type detection
+└── tests/                     # Test suites
+    ├── test_media_converter.py
+    ├── test_audio_validator.py
+    ├── test_ffmpeg_checker.py
+    └── test_file_detector.py
+```
 
 ## Output Example
 
