@@ -18,6 +18,9 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     parser.add_argument("--help", action="store_true", help="Show help message")
     parser.add_argument("--version", action="store_true", help="Show version")
     parser.add_argument("--formats", action="store_true", help="Show supported formats")
+    parser.add_argument(
+        "--diagnostics", action="store_true", help="Show system diagnostics"
+    )
 
     return parser.parse_args(args)
 
@@ -39,6 +42,7 @@ Options:
     --help          Show this help message
     --version       Show version information
     --formats       Show supported input formats
+    --diagnostics   Show system diagnostics and requirements
 
 Examples:
     python main.py meeting.webm
@@ -80,6 +84,12 @@ async def main() -> int:
             print("Supported input formats:")
             for fmt in sorted(formats):
                 print(f"  .{fmt}")
+            return 0
+
+        # Handle diagnostics flag
+        if args.diagnostics:
+            diagnostics = cli.get_system_diagnostics()
+            cli.print_system_diagnostics(diagnostics)
             return 0
 
         # Validate input file is provided

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -16,6 +17,8 @@ from exceptions import (
 from utils.error_recovery import ErrorRecoveryManager, RetryConfig
 from utils.ffmpeg_checker import FFmpegChecker
 from utils.file_detector import FileType, FileTypeDetector
+from utils.performance_monitor import ModelLoadOptimizer, PerformanceMonitor
+from utils.platform_compatibility import PlatformCompatibility
 from validators.audio_validator import AudioValidator, ValidationStatus
 
 
@@ -39,6 +42,7 @@ class TranscriptionWorkflow:
         chunk_length_sec: int = 30,
         quality: QualityLevel = QualityLevel.MEDIUM,
         error_recovery_config: RetryConfig | None = None,
+        enable_performance_monitoring: bool = True,
     ):
         """Initialize transcription workflow with settings"""
         self.chunk_length_sec = chunk_length_sec
@@ -47,11 +51,23 @@ class TranscriptionWorkflow:
         # Initialize error recovery
         self.error_recovery = ErrorRecoveryManager(error_recovery_config)
 
+        # Initialize platform compatibility
+        self.platform_compat = PlatformCompatibility()
+
+        # Initialize performance monitoring
+        self.performance_monitor = PerformanceMonitor(
+            enable_torch_monitoring=enable_performance_monitoring
+        )
+        self.model_optimizer = ModelLoadOptimizer(self.performance_monitor)
+
         # Initialize all components
         self.ffmpeg_checker = FFmpegChecker()
         self.file_detector = FileTypeDetector()
         self.media_converter = MediaConverter(quality=quality)
         self.audio_validator = AudioValidator()
+
+        # Setup environment for optimal platform performance
+        self.platform_compat.setup_environment()
 
     async def process_file(
         self, input_path: str, output_path: str
@@ -220,54 +236,86 @@ class TranscriptionWorkflow:
             )
 
     async def _transcribe_audio(self, audio_path: str) -> str:
-        """Transcribe audio file using Whisper model"""
-        try:
-            # Load audio
-            waveform, sample_rate = torchaudio.load(audio_path)
-
-            # Preprocess
-            if waveform.shape[0] > 1:
-                waveform = waveform.mean(dim=0)
-            waveform = waveform.squeeze()
-
-            if sample_rate != 16_000:
-                resampler = torchaudio.transforms.Resample(sample_rate, 16_000)
-                waveform = resampler(waveform)
-                sample_rate = 16_000
-
-            # Use MPS if available (Apple Silicon), otherwise CPU
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
-
-            # Load Model
+        """Transcribe audio file using Whisper model with performance optimization"""
+        with self.performance_monitor.monitor_operation("transcribe_audio"):
             try:
-                processor = WhisperProcessor.from_pretrained(
-                    "MediaTek-Research/Breeze-ASR-25"
-                )
-                model = (
-                    WhisperForConditionalGeneration.from_pretrained(
-                        "MediaTek-Research/Breeze-ASR-25"
-                    )
-                    .to(device)
-                    .eval()
-                )
+                # Load audio with monitoring
+                with self.performance_monitor.monitor_operation("load_audio"):
+                    waveform, sample_rate = torchaudio.load(audio_path)
+
+                # Preprocess
+                with self.performance_monitor.monitor_operation("preprocess_audio"):
+                    if waveform.shape[0] > 1:
+                        waveform = waveform.mean(dim=0)
+                    waveform = waveform.squeeze()
+
+                    if sample_rate != 16_000:
+                        resampler = torchaudio.transforms.Resample(sample_rate, 16_000)
+                        waveform = resampler(waveform)
+                        sample_rate = 16_000
+
+                # Get optimal device using platform compatibility
+                device = self.platform_compat.get_optimal_torch_device()
+
+                try:
+                    with self.model_optimizer.load_model_optimized(
+                        "MediaTek-Research/Breeze-ASR-25",
+                        WhisperForConditionalGeneration,
+                        device,
+                    ) as (model, processor):
+                        if processor is None:
+                            processor = WhisperProcessor.from_pretrained(
+                                "MediaTek-Research/Breeze-ASR-25"
+                            )
+
+                        # Check memory usage before processing
+                        if self.performance_monitor.check_memory_threshold():
+                            self.performance_monitor.log_memory_warning()
+
+                        # Continue with chunked processing...
+                        return await self._process_audio_chunks(
+                            waveform, sample_rate, processor, model, device, audio_path
+                        )
+
+                except Exception as e:
+                    raise TranscriptionError(
+                        "Failed to load Whisper model",
+                        audio_path=audio_path,
+                        error_code="TR_MODEL_LOADING",
+                        can_retry=True,
+                    ) from e
+
+            except TranscriptionError:
+                # Re-raise TranscriptionError as-is
+                raise
             except Exception as e:
                 raise TranscriptionError(
-                    "Failed to load Whisper model",
+                    "Unexpected transcription failure",
                     audio_path=audio_path,
-                    error_code="TR_MODEL_LOADING",
-                    can_retry=True,
+                    can_retry=False,
                 ) from e
 
-            # Split audio into chunks
-            total_length = waveform.shape[0]
-            chunk_samples = self.chunk_length_sec * sample_rate
-            num_chunks = int(np.ceil(total_length / chunk_samples))
+    async def _process_audio_chunks(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        processor,
+        model,
+        device: str,
+        audio_path: str,
+    ) -> str:
+        """Process audio in chunks with performance monitoring"""
+        # Split audio into chunks
+        total_length = waveform.shape[0]
+        chunk_samples = self.chunk_length_sec * sample_rate
+        num_chunks = int(np.ceil(total_length / chunk_samples))
 
-            transcriptions = []
+        transcriptions = []
 
-            # Process each chunk
-            for i in range(num_chunks):
-                try:
+        # Process each chunk with memory monitoring
+        for i in range(num_chunks):
+            try:
+                with self.performance_monitor.monitor_operation(f"chunk_{i + 1}"):
                     start_idx = i * chunk_samples
                     end_idx = min((i + 1) * chunk_samples, total_length)
                     chunk = waveform[start_idx:end_idx]
@@ -292,27 +340,23 @@ class TranscriptionWorkflow:
                     if chunk_transcription.strip():
                         transcriptions.append(chunk_transcription.strip())
 
-                except Exception as e:
-                    raise TranscriptionError(
-                        f"Failed to transcribe audio chunk {i + 1}/{num_chunks}",
-                        audio_path=audio_path,
-                        chunk_index=i,
-                        duration_seconds=self.chunk_length_sec,
-                        can_retry=True,
-                    ) from e
+                    # Check memory usage after each chunk
+                    if self.performance_monitor.check_memory_threshold(
+                        6144
+                    ):  # 6GB threshold
+                        self.performance_monitor.cleanup_torch_cache()
 
-            # Combine all transcriptions
-            return " ".join(transcriptions)
+            except Exception as e:
+                raise TranscriptionError(
+                    f"Failed to transcribe audio chunk {i + 1}/{num_chunks}",
+                    audio_path=audio_path,
+                    chunk_index=i,
+                    duration_seconds=self.chunk_length_sec,
+                    can_retry=True,
+                ) from e
 
-        except TranscriptionError:
-            # Re-raise TranscriptionError as-is
-            raise
-        except Exception as e:
-            raise TranscriptionError(
-                "Unexpected transcription failure",
-                audio_path=audio_path,
-                can_retry=False,
-            ) from e
+        # Combine all transcriptions
+        return " ".join(transcriptions)
 
     def get_supported_input_formats(self) -> list[str]:
         """Get list of supported input formats"""
@@ -329,3 +373,61 @@ class TranscriptionWorkflow:
                 except OSError:
                     # Ignore cleanup errors in testing environments
                     pass
+
+    def get_system_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive system diagnostics information"""
+        platform_info = self.platform_compat.get_platform_info()
+        memory_rec = self.platform_compat.get_memory_recommendations()
+        validation_issues = self.platform_compat.validate_system_requirements()
+
+        diagnostics = {
+            "platform": {
+                "system": platform_info.system,
+                "architecture": platform_info.architecture,
+                "python_version": platform_info.python_version,
+                "is_windows": platform_info.is_windows,
+                "is_macos": platform_info.is_macos,
+                "is_linux": platform_info.is_linux,
+            },
+            "hardware_acceleration": {
+                "supports_mps": platform_info.supports_mps,
+                "supports_cuda": platform_info.supports_cuda,
+                "optimal_device": self.platform_compat.get_optimal_torch_device(),
+            },
+            "dependencies": {
+                "ffmpeg_available": platform_info.ffmpeg_available,
+                "ffmpeg_install_instructions": (
+                    self.platform_compat.get_ffmpeg_install_instructions()
+                    if not platform_info.ffmpeg_available
+                    else None
+                ),
+            },
+            "memory_recommendations": memory_rec,
+            "validation_issues": validation_issues,
+            "supported_formats": self.get_supported_input_formats(),
+            "directories": {
+                "config": self.platform_compat.get_config_directory(),
+                "cache": self.platform_compat.get_cache_directory(),
+                "models": self.platform_compat.get_model_download_path(),
+            },
+        }
+
+        return diagnostics
+
+    def log_system_diagnostics(self) -> None:
+        """Log detailed system diagnostics"""
+        self.platform_compat.log_platform_info()
+
+        validation_issues = self.platform_compat.validate_system_requirements()
+        if validation_issues:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning("System validation issues found:")
+            for issue in validation_issues:
+                logger.warning(f"  - {issue}")
+        else:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info("System validation passed - all requirements met")
