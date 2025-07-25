@@ -1,22 +1,22 @@
 # Scrible Wise
 
-An audio transcription tool based on Whisper models that converts long audio files into Chinese transcripts, with support for WebM video to MP3 conversion.
+A comprehensive audio transcription tool powered by Whisper models that converts audio/video files into Chinese transcripts. Features include WebM video conversion, robust error handling, and an intuitive CLI interface.
 
 ## Features
 
-### Audio Transcription
-- Supports various audio formats including MP3
-- Uses MediaTek Breeze-ASR-25 model for Chinese speech recognition
-- Automatic chunking for long audio files (30-second segments)
-- Supports Apple Silicon (MPS) and CPU computation
-- Complete transcription results saved as text files
+### Core Features
+- 🎵 **Multi-format Support**: WebM, MP4, MKV, AVI, MP3, WAV, FLAC, OGG, AAC, M4A
+- 🧠 **Advanced AI**: MediaTek Breeze-ASR-25 Whisper model for Chinese speech recognition
+- ⚡ **Smart Processing**: Automatic chunking for long audio files (30-second segments)
+- 🔧 **Error Recovery**: Comprehensive error handling with retry mechanisms and recovery suggestions
+- 💻 **Cross-platform**: Apple Silicon (MPS), CPU support with automatic fallback
+- 📝 **Complete Workflow**: Video → Audio → Transcription with validation at each step
 
-### WebM to MP3 Conversion (New)
-- Convert WebM video files to MP3 audio format
-- Multiple quality levels (Low: 128k, Medium: 160k, High: 256k bitrate)
-- Async processing with timeout handling
-- FFmpeg integration with cross-platform support
-- Audio file validation with detailed reporting
+### New CLI Interface
+- 🚀 **Easy to Use**: Simple command-line interface with automatic output path generation
+- ✅ **User-friendly**: Clear success/error messages with recovery suggestions
+- 🔍 **Format Detection**: Automatic file type detection and processing
+- 📊 **Progress Tracking**: Real-time processing feedback and status reporting
 
 ## System Requirements
 
@@ -57,41 +57,51 @@ For development with linting tools:
 uv sync --extra dev
 ```
 
-## Usage
+## Quick Start
 
-### Audio Transcription
-1. Name your audio file `meeting.mp3` and place it in the project root directory
-2. Run the transcription program:
+### 🚀 Simple Usage (Recommended)
+The new CLI interface makes transcription incredibly easy:
 
 ```bash
+# Basic transcription - automatic output file generation
+uv run python -m cli.main input.webm
+
+# Custom output file
+uv run python -m cli.main input.webm my_transcription.txt
+
+# Works with any supported format
+uv run python -m cli.main meeting.mp3
+uv run python -m cli.main video.mp4
+uv run python -m cli.main audio.wav
+```
+
+### 📋 CLI Options
+```bash
+# Show help
+uv run python -m cli.main --help
+
+# Show version
+uv run python -m cli.main --version
+
+# Show supported formats
+uv run python -m cli.main --formats
+```
+
+### 🔄 Legacy Usage (Still Supported)
+For backward compatibility, the original interface works with MP3 files:
+
+```bash
+# Place your audio file as 'meeting.mp3' in the project root
 uv run python main.py
 ```
 
-### WebM to MP3 Conversion
-The tool supports converting WebM video files to MP3 audio format before transcription:
+### 💡 Example Output
+```bash
+$ uv run python -m cli.main presentation.webm
 
-```python
-from converters.media_converter import MediaConverter, QualityLevel
-from validators.audio_validator import AudioValidator
-from utils.ffmpeg_checker import FFmpegChecker
-from utils.file_detector import FileTypeDetector
-
-# Check FFmpeg installation
-ffmpeg_checker = FFmpegChecker()
-if not ffmpeg_checker.check_ffmpeg_installation():
-    raise RuntimeError("FFmpeg not found. Please install FFmpeg first.")
-
-# Detect file type
-detector = FileTypeDetector()
-file_type = detector.detect_file_type("input.webm")
-
-# Convert WebM to MP3
-converter = MediaConverter(quality=QualityLevel.MEDIUM)
-result = await converter.convert_webm_to_mp3("input.webm", "output.mp3")
-
-# Validate converted audio
-validator = AudioValidator()
-validation_result = validator.validate_audio_file("output.mp3")
+✅ Transcription completed successfully
+Input: presentation.webm
+Output: presentation_transcription.txt
 ```
 
 ## Development
@@ -170,33 +180,46 @@ The hooks will automatically:
 
 ```
 scrible-wise/
-├── main.py                    # Main transcription program
-├── converters/                # Media conversion modules
-│   └── media_converter.py     # WebM to MP3 converter
-├── validators/                # Audio validation modules
-│   └── audio_validator.py     # Audio file validator
-├── utils/                     # Utility modules
-│   ├── ffmpeg_checker.py      # FFmpeg dependency checker
-│   └── file_detector.py       # File type detection
-└── tests/                     # Test suites
-    ├── test_media_converter.py
-    ├── test_audio_validator.py
-    ├── test_ffmpeg_checker.py
-    └── test_file_detector.py
+├── main.py                         # Legacy transcription program
+├── cli/                            # New CLI interface
+│   ├── main.py                     # Main CLI entry point
+│   └── integration.py              # CLI integration layer
+├── transcription/                  # Core transcription workflow
+│   └── workflow.py                 # Complete processing workflow
+├── converters/                     # Media conversion modules
+│   └── media_converter.py          # WebM to MP3 converter
+├── validators/                     # Audio validation modules
+│   └── audio_validator.py          # Audio file validator
+├── utils/                          # Utility modules
+│   ├── ffmpeg_checker.py           # FFmpeg dependency checker
+│   ├── file_detector.py            # File type detection
+│   └── error_recovery.py           # Error handling and retry logic
+├── exceptions/                     # Custom exception hierarchy
+│   ├── base.py                     # Base exception classes
+│   ├── conversion.py               # Conversion-related exceptions
+│   ├── validation.py               # Validation-related exceptions
+│   └── transcription.py            # Transcription-related exceptions
+└── tests/                          # Comprehensive test suites (102 tests)
+    ├── test_*.py                   # Unit tests for all modules
+    └── test_workflow_error_integration.py  # Integration tests
 ```
 
-## Output Example
+## Error Handling & Recovery
 
+Scrible Wise includes comprehensive error handling with automatic recovery suggestions:
+
+```bash
+$ uv run python -m cli.main broken_video.webm
+
+❌ Error: FFmpeg not found. FFmpeg is required for media conversion.
+Install it using: brew install ffmpeg (macOS) or sudo apt install ffmpeg (Ubuntu/Debian)
 ```
-Starting long audio transcription...
-Using device: mps
-Audio duration: 7.0 minutes
-Processing in 15 segments, 30 seconds each
-Processing segment 1/15 (0.0s - 30.0s)
-Segment 1 result: That's start our meeting today
-...
-Transcription saved to transcription.txt
-```
+
+The system automatically:
+- ✅ **Detects Issues**: Identifies missing dependencies, corrupted files, and format problems
+- 🔄 **Retries Operations**: Automatic retry with exponential backoff for temporary failures
+- 💡 **Provides Solutions**: Clear recovery suggestions for common problems
+- 🧹 **Cleans Up**: Automatic cleanup of temporary files on errors
 
 ## Notes
 
@@ -205,12 +228,36 @@ Transcription saved to transcription.txt
 - Recommended to run on Apple Silicon Mac for optimal performance
 - Supports Chinese speech recognition, limited effectiveness for other languages
 
-## Troubleshooting
+## Testing
 
-If you encounter audio loading issues, ensure `soundfile` and `librosa` packages are installed:
+The project includes comprehensive test coverage with 102 test cases:
 
 ```bash
-uv add soundfile librosa
+# Run all tests
+uv run pytest -v
+
+# Run specific test module
+uv run pytest tests/test_workflow_error_integration.py -v
+
+# Run with coverage
+uv run pytest --cov=. --cov-report=html
 ```
 
-If you encounter CUDA-related errors, the program will automatically switch to MPS or CPU mode.
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `FFmpeg not found` | Install FFmpeg: `brew install ffmpeg` (macOS) |
+| `Audio loading failed` | Install audio libraries: `uv add soundfile librosa` |
+| `CUDA errors` | Program auto-switches to MPS/CPU - no action needed |
+| `Model download fails` | Check internet connection, model downloads on first run |
+| `Memory errors` | Try shorter audio files or reduce concurrent processing |
+
+### Getting Help
+
+1. Check the error message for recovery suggestions
+2. Verify FFmpeg installation: `ffmpeg -version`
+3. Test with a smaller audio file
+4. Check available disk space (models need ~2GB)

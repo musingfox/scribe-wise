@@ -53,7 +53,7 @@
 
 ## Development Workflow
 
-### Common Commands
+### Quick Start Commands
 ```bash
 # Install dependencies
 uv sync
@@ -61,7 +61,16 @@ uv sync
 # Install with dev dependencies
 uv sync --extra dev
 
-# Run main program
+# Run new CLI interface (recommended)
+uv run python -m cli.main input.webm
+
+# Run with custom output
+uv run python -m cli.main input.webm output.txt
+
+# Show help and options
+uv run python -m cli.main --help
+
+# Run legacy interface
 uv run python main.py
 
 # Check Python version
@@ -103,10 +112,10 @@ uv run pre-commit run --files main.py
 
 ### Testing Process
 - **Testing Framework**: pytest with asyncio and mocking support
-- **Test Coverage**: 39 test cases covering all modules
+- **Test Coverage**: 102 test cases covering all modules and integration scenarios
 - **Test Execution**: `uv run pytest -v`
-- **Manual Testing**: Use `meeting.mp3` for transcription testing
-- **Output Validation**: Check `transcription.txt` completeness
+- **Manual Testing**: Use `meeting.mp3` for legacy testing, any supported format for CLI testing
+- **Output Validation**: Check `transcription.txt` completeness and CLI status messages
 
 ### Code Quality
 - **Style**: Clean, self-documenting code
@@ -122,32 +131,45 @@ uv run pre-commit run --files main.py
 
 ```
 scrible-wise/
-├── main.py                    # Main transcription program
-├── meeting.mp3               # Test audio file
-├── transcription.txt         # Output results
-├── converters/               # Media conversion modules
+├── main.py                         # Legacy transcription program
+├── meeting.mp3                     # Test audio file
+├── transcription.txt               # Output results
+├── cli/                            # CLI interface modules
 │   ├── __init__.py
-│   └── media_converter.py    # WebM to MP3 converter
-├── validators/               # Audio validation modules
+│   ├── main.py                     # Main CLI entry point
+│   └── integration.py              # CLI integration layer
+├── transcription/                  # Core workflow modules
 │   ├── __init__.py
-│   └── audio_validator.py    # Audio file validator
-├── utils/                    # Utility modules
+│   └── workflow.py                 # Complete transcription workflow
+├── converters/                     # Media conversion modules
 │   ├── __init__.py
-│   ├── ffmpeg_checker.py     # FFmpeg dependency checker
-│   └── file_detector.py      # File type detection
-├── tests/                    # Test suites
+│   └── media_converter.py          # WebM to MP3 converter
+├── validators/                     # Audio validation modules
 │   ├── __init__.py
-│   ├── test_media_converter.py
-│   ├── test_audio_validator.py
-│   ├── test_ffmpeg_checker.py
-│   └── test_file_detector.py
-├── PRD/                      # Product Requirements Documents
+│   └── audio_validator.py          # Audio file validator
+├── utils/                          # Utility modules
+│   ├── __init__.py
+│   ├── ffmpeg_checker.py           # FFmpeg dependency checker
+│   ├── file_detector.py            # File type detection
+│   └── error_recovery.py           # Error handling and retry logic
+├── exceptions/                     # Custom exception hierarchy
+│   ├── __init__.py
+│   ├── base.py                     # Base exception classes
+│   ├── conversion.py               # Conversion-related exceptions
+│   ├── validation.py               # Validation-related exceptions
+│   └── transcription.py            # Transcription-related exceptions
+├── tests/                          # Comprehensive test suites
+│   ├── __init__.py
+│   ├── test_*.py                   # Unit tests for all modules (102 total)
+│   └── test_workflow_error_integration.py  # Integration tests
+├── PRD/                            # Product Requirements Documents
 │   └── webm-to-mp3-transcription.md
-├── pyproject.toml            # Project configuration
-├── uv.lock                  # Dependency lock
-├── .pre-commit-config.yaml  # Pre-commit configuration
-├── README.md                # Project documentation
-└── CLAUDE.md               # This configuration file
+├── pyproject.toml                  # Project configuration
+├── uv.lock                        # Dependency lock
+├── .pre-commit-config.yaml        # Pre-commit configuration
+├── .gitignore                     # Git ignore rules
+├── README.md                      # Project documentation
+└── CLAUDE.md                     # This configuration file
 ```
 
 ## Functional Modules
@@ -159,7 +181,7 @@ scrible-wise/
 - **Chunked Processing**: 30-second segment processing for long audio
 - **Result Merging**: Concatenates all segment transcription results
 
-### WebM Conversion Features (New)
+### WebM Conversion Features
 - **FFmpeg Integration**: Cross-platform video conversion support
 - **File Type Detection**: Automatic format recognition (WebM, MP4, MP3, etc.)
 - **Media Conversion**: Async WebM to MP3 conversion with quality control
@@ -167,16 +189,33 @@ scrible-wise/
 - **Quality Levels**: Configurable bitrate (128k/160k/256k)
 - **Timeout Handling**: Configurable conversion timeouts
 
+### CLI Interface Features (New)
+- **Simple Command**: `uv run python -m cli.main input.webm`
+- **Automatic Output**: Auto-generates output filenames if not specified
+- **Format Support**: Handles all supported audio/video formats
+- **User-friendly Messages**: Clear success/error reporting with emojis
+- **Help System**: Built-in help, version, and format information
+
+### Error Handling & Recovery (Phase 3)
+- **Custom Exception Hierarchy**: ScribbleWiseError, ConversionError, ValidationError, TranscriptionError
+- **Retry Mechanisms**: Configurable exponential backoff with jitter
+- **Recovery Suggestions**: Context-aware error messages with solution guidance
+- **Temporary File Management**: Automatic cleanup on errors and completion
+- **Graceful Degradation**: Fallback strategies for common failure scenarios
+
 ### Device Support
 - Auto-detects MPS availability
 - Graceful fallback to CPU
 - Model loading to corresponding device
 
 ### Module Architecture
-- **`utils/`**: Core utility functions (FFmpeg, file detection)
-- **`converters/`**: Media conversion logic
-- **`validators/`**: Audio file validation
-- **`tests/`**: Comprehensive test coverage with TDD methodology
+- **`cli/`**: User-friendly command-line interface and integration layer
+- **`transcription/`**: Complete workflow orchestration with error handling
+- **`utils/`**: Core utility functions (FFmpeg, file detection, error recovery)
+- **`converters/`**: Media conversion logic with retry mechanisms
+- **`validators/`**: Audio file validation with detailed reporting
+- **`exceptions/`**: Custom exception hierarchy for precise error handling
+- **`tests/`**: Comprehensive test coverage with TDD methodology (102 test cases)
 
 ## Known Issues & Solutions
 
@@ -212,6 +251,12 @@ scrible-wise/
 4. **Compatibility**: Primarily optimized for macOS Apple Silicon
 
 ## Git Commit Convention
+
+### Pre-Commit
+
+Run pre-commit before create a git commit
+
+### Commit Message Convention
 
 Using conventional commits format:
 - `feat: new feature`
