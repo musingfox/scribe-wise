@@ -1,0 +1,53 @@
+[project]
+name = "scrible-wise"
+version = "0.1.0"
+description = "An audio transcription tool based on Whisper models that converts long audio files into transcripts"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+    "transformers>=4.53.3",
+    "soundfile>=0.12.1",
+    "librosa>=0.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = ["E501"]  # line too long (handled by black)
+
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
