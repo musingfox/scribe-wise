@@ -21,6 +21,13 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     parser.add_argument(
         "--diagnostics", action="store_true", help="Show system diagnostics"
     )
+    parser.add_argument("--model", type=str, help="Specify transcription model to use")
+    parser.add_argument(
+        "--list-models", action="store_true", help="List available models"
+    )
+    parser.add_argument(
+        "--model-info", type=str, help="Show information about specific model"
+    )
 
     return parser.parse_args(args)
 
@@ -43,11 +50,17 @@ Options:
     --version       Show version information
     --formats       Show supported input formats
     --diagnostics   Show system diagnostics and requirements
+    --model MODEL   Specify transcription model to use
+    --list-models   List all available transcription models
+    --model-info MODEL  Show detailed information about specific model
 
 Examples:
     python main.py meeting.webm
     python main.py video.webm transcription.txt
     python main.py audio.mp3 output.txt
+    python main.py audio.mp3 --model local_whisper_base
+    python main.py --list-models
+    python main.py --model-info openai_api
 
 Features:
     - Convert WebM videos to MP3 audio
@@ -92,14 +105,56 @@ async def main() -> int:
             cli.print_system_diagnostics(diagnostics)
             return 0
 
+        # Handle list-models flag
+        if args.list_models:
+            models = cli.get_available_models()
+            print("Available transcription models:")
+            print("=" * 40)
+            for model in models:
+                print(f"  {model['id']:20} - {model['description']}")
+                print(f"  {'':20}   Type: {model['type']}, Model: {model['name']}")
+                print()
+            return 0
+
+        # Handle model-info flag
+        if args.model_info:
+            info = cli.get_model_info(args.model_info)
+            if info is None:
+                print(f"❌ Unknown model: {args.model_info}", file=sys.stderr)
+                print("Use --list-models to see available models")
+                return 1
+
+            print(f"Model Information: {info['id']}")
+            print("=" * 40)
+            print(f"Name: {info['name']}")
+            print(f"Type: {info['type']}")
+            print(f"Description: {info['description']}")
+            print(f"Device: {info['device']}")
+            print(f"Language: {info['language']}")
+            print(f"Chunk Length: {info['chunk_length']}s")
+            print(f"Temperature: {info['temperature']}")
+            print(f"Beam Size: {info['beam_size']}")
+            return 0
+
         # Validate input file is provided
         if not args.input:
             print("Error: Input file is required", file=sys.stderr)
             print_help()
             return 1
 
-        # Process file
-        result = await cli.process_file(args.input, args.output)
+        # Validate model if specified
+        if args.model and not cli.validate_model_id(args.model):
+            print(f"❌ Unknown model: {args.model}", file=sys.stderr)
+            print("Use --list-models to see available models")
+            return 1
+
+        # Process file with optional model selection
+        if args.model:
+            result = await cli.process_file_with_model(
+                args.input, args.output, args.model
+            )
+        else:
+            result = await cli.process_file(args.input, args.output)
 
         if result.success:
             print(f"✅ {result.message}")

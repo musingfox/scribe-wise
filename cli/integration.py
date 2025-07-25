@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from config.model_config import ModelConfig, ModelType
 from transcription.workflow import TranscriptionWorkflow
 
 
@@ -21,6 +22,7 @@ class CLIIntegration:
     def __init__(self):
         """Initialize CLI integration with workflow"""
         self.workflow = TranscriptionWorkflow()
+        self.model_config = ModelConfig()
 
     async def process_file(
         self, input_path: str, output_path: str | None = None
@@ -141,3 +143,83 @@ class CLIIntegration:
             print("\n✅ System Validation: All requirements met")
 
         print("\n" + "=" * 50)
+
+    def get_available_models(self) -> list[dict[str, str]]:
+        """Get list of available transcription models."""
+        models = []
+        for model_type in ModelType:
+            settings = self.model_config.get_model_settings(model_type)
+            model_info = {
+                "id": model_type.value.lower(),
+                "name": settings.model_name,
+                "type": "local" if model_type.is_local_model() else "api",
+                "description": self._get_model_description(model_type),
+            }
+            models.append(model_info)
+        return models
+
+    def get_model_info(self, model_id: str) -> dict[str, Any] | None:
+        """Get detailed information about specific model."""
+        model_type = self._model_id_to_type(model_id)
+        if model_type is None:
+            return None
+
+        settings = self.model_config.get_model_settings(model_type)
+        return {
+            "id": model_id,
+            "name": settings.model_name,
+            "type": "local" if model_type.is_local_model() else "api",
+            "description": self._get_model_description(model_type),
+            "device": settings.device,
+            "language": settings.language,
+            "chunk_length": settings.chunk_length,
+            "temperature": settings.temperature,
+            "beam_size": settings.beam_size,
+        }
+
+    async def process_file_with_model(
+        self,
+        input_path: str,
+        output_path: str | None = None,
+        model_id: str | None = None,
+    ) -> CLIResult:
+        """Process file with specific model."""
+        # Set model if specified
+        if model_id:
+            model_type = self._model_id_to_type(model_id)
+            if model_type is None:
+                return CLIResult(
+                    success=False,
+                    message=f"Unknown model: {model_id}",
+                    input_path=input_path,
+                )
+            self.model_config.set_model(model_type)
+
+        # Use existing process_file method
+        return await self.process_file(input_path, output_path)
+
+    def validate_model_id(self, model_id: str | None) -> bool:
+        """Validate model ID."""
+        if not model_id:
+            return False
+        return self._model_id_to_type(model_id) is not None
+
+    def _model_id_to_type(self, model_id: str) -> ModelType | None:
+        """Convert model ID string to ModelType enum."""
+        model_id_upper = model_id.upper()
+        for model_type in ModelType:
+            if model_type.value == model_id_upper:
+                return model_type
+        return None
+
+    def _get_model_description(self, model_type: ModelType) -> str:
+        """Get human-readable description for model."""
+        descriptions = {
+            ModelType.LOCAL_BREEZE: "MediaTek Breeze ASR model for Chinese speech recognition",
+            ModelType.LOCAL_WHISPER_BASE: "OpenAI Whisper Base model (local)",
+            ModelType.LOCAL_WHISPER_SMALL: "OpenAI Whisper Small model (local)",
+            ModelType.LOCAL_WHISPER_MEDIUM: "OpenAI Whisper Medium model (local)",
+            ModelType.LOCAL_WHISPER_LARGE: "OpenAI Whisper Large model (local)",
+            ModelType.OPENAI_API: "OpenAI Whisper API service (cloud)",
+        }
+        return descriptions.get(model_type, "Unknown model")
