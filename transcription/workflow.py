@@ -4,9 +4,8 @@ from typing import Any
 
 import numpy as np
 import torch
-import torchaudio
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
+from config.model_config import ModelConfig, ModelType
 from converters.media_converter import MediaConverter, QualityLevel
 from exceptions import (
     ConversionError,
@@ -14,6 +13,10 @@ from exceptions import (
     TranscriptionError,
     ValidationError,
 )
+from services.base import BaseTranscriptionService
+from services.local_breeze import LocalBreezeService
+from services.local_whisper import LocalWhisperService
+from services.openai_service import OpenAITranscriptionService
 from utils.error_recovery import ErrorRecoveryManager, RetryConfig
 from utils.ffmpeg_checker import FFmpegChecker
 from utils.file_detector import FileType, FileTypeDetector
@@ -47,6 +50,8 @@ class TranscriptionWorkflow:
         """Initialize transcription workflow with settings"""
         self.chunk_length_sec = chunk_length_sec
         self.quality = quality
+        self.model_config = ModelConfig()
+        self._current_service: BaseTranscriptionService | None = None
 
         # Initialize error recovery
         self.error_recovery = ErrorRecoveryManager(error_recovery_config)
@@ -236,63 +241,38 @@ class TranscriptionWorkflow:
             )
 
     async def _transcribe_audio(self, audio_path: str) -> str:
-        """Transcribe audio file using Whisper model with performance optimization"""
+        """Transcribe audio file using configured transcription service"""
         with self.performance_monitor.monitor_operation("transcribe_audio"):
             try:
-                # Load audio with monitoring
-                with self.performance_monitor.monitor_operation("load_audio"):
-                    waveform, sample_rate = torchaudio.load(audio_path)
-
-                # Preprocess
-                with self.performance_monitor.monitor_operation("preprocess_audio"):
-                    if waveform.shape[0] > 1:
-                        waveform = waveform.mean(dim=0)
-                    waveform = waveform.squeeze()
-
-                    if sample_rate != 16_000:
-                        resampler = torchaudio.transforms.Resample(sample_rate, 16_000)
-                        waveform = resampler(waveform)
-                        sample_rate = 16_000
-
-                # Get optimal device using platform compatibility
-                device = self.platform_compat.get_optimal_torch_device()
+                # Load transcription service
+                service = await self._load_transcription_service()
 
                 try:
-                    with self.model_optimizer.load_model_optimized(
-                        "MediaTek-Research/Breeze-ASR-25",
-                        WhisperForConditionalGeneration,
-                        device,
-                    ) as (model, processor):
-                        if processor is None:
-                            processor = WhisperProcessor.from_pretrained(
-                                "MediaTek-Research/Breeze-ASR-25"
-                            )
+                    # Use service to transcribe
+                    result = await service.transcribe_async(audio_path)
 
-                        # Check memory usage before processing
-                        if self.performance_monitor.check_memory_threshold():
-                            self.performance_monitor.log_memory_warning()
-
-                        # Continue with chunked processing...
-                        return await self._process_audio_chunks(
-                            waveform, sample_rate, processor, model, device, audio_path
+                    if not result.success:
+                        raise TranscriptionError(
+                            f"Transcription failed: {result.error_message}",
+                            audio_path=audio_path,
+                            error_code="TR_SERVICE_FAILED",
+                            can_retry=True,
                         )
 
-                except Exception as e:
-                    raise TranscriptionError(
-                        "Failed to load Whisper model",
-                        audio_path=audio_path,
-                        error_code="TR_MODEL_LOADING",
-                        can_retry=True,
-                    ) from e
+                    return result.transcription or ""
 
-            except TranscriptionError:
-                # Re-raise TranscriptionError as-is
-                raise
+                finally:
+                    # Always unload service
+                    await self._unload_transcription_service()
+
             except Exception as e:
+                if isinstance(e, TranscriptionError):
+                    raise
                 raise TranscriptionError(
-                    "Unexpected transcription failure",
+                    f"Failed to transcribe audio: {str(e)}",
                     audio_path=audio_path,
-                    can_retry=False,
+                    error_code="TR_GENERAL_ERROR",
+                    can_retry=True,
                 ) from e
 
     async def _process_audio_chunks(
@@ -431,3 +411,67 @@ class TranscriptionWorkflow:
 
             logger = logging.getLogger(__name__)
             logger.info("System validation passed - all requirements met")
+
+    async def _load_transcription_service(self) -> BaseTranscriptionService:
+        """Load transcription service based on current model configuration."""
+        model_type = self.model_config.current_model
+        settings = self.model_config.get_current_settings()
+
+        # Create service instance based on model type
+        service_map = {
+            ModelType.LOCAL_BREEZE: LocalBreezeService,
+            ModelType.LOCAL_WHISPER_BASE: LocalWhisperService,
+            ModelType.LOCAL_WHISPER_SMALL: LocalWhisperService,
+            ModelType.LOCAL_WHISPER_MEDIUM: LocalWhisperService,
+            ModelType.LOCAL_WHISPER_LARGE: LocalWhisperService,
+            ModelType.OPENAI_API: OpenAITranscriptionService,
+        }
+
+        service_class = service_map.get(model_type)
+        if service_class is None:
+            raise TranscriptionError(f"Unsupported model type: {model_type}")
+
+        # Create service with appropriate parameters
+        if model_type == ModelType.LOCAL_BREEZE:
+            service = service_class()
+        elif model_type in [
+            ModelType.LOCAL_WHISPER_BASE,
+            ModelType.LOCAL_WHISPER_SMALL,
+            ModelType.LOCAL_WHISPER_MEDIUM,
+            ModelType.LOCAL_WHISPER_LARGE,
+        ]:
+            service = service_class(model_name=settings.model_name)
+        elif model_type == ModelType.OPENAI_API:
+            service = service_class(
+                model=settings.model_name,
+                language=settings.language if settings.language != "auto" else None,
+                temperature=settings.temperature,
+            )
+        else:
+            service = service_class()
+
+        # Load the service
+        await service.load_model()
+        self._current_service = service
+        return service
+
+    async def _unload_transcription_service(self) -> None:
+        """Unload current transcription service."""
+        if self._current_service:
+            await self._current_service.unload_model()
+            self._current_service = None
+
+    def get_current_model_info(self) -> dict[str, Any]:
+        """Get information about currently configured model."""
+        settings = self.model_config.get_current_settings()
+        return {
+            "type": self.model_config.current_model,
+            "settings": {
+                "model_name": settings.model_name,
+                "device": settings.device,
+                "chunk_length": settings.chunk_length,
+                "language": settings.language,
+                "temperature": settings.temperature,
+                "beam_size": settings.beam_size,
+            },
+        }
