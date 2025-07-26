@@ -6,17 +6,23 @@ A comprehensive audio transcription tool powered by Whisper models that converts
 
 ### Core Features
 - 🎵 **Multi-format Support**: WebM, MP4, MKV, AVI, MP3, WAV, FLAC, OGG, AAC, M4A
-- 🧠 **Advanced AI**: MediaTek Breeze-ASR-25 Whisper model for Chinese speech recognition
+- 🧠 **Multi-Model AI**: Support for 6 different transcription models (local & cloud)
+  - MediaTek Breeze-ASR-25 (默認中文模型)
+  - OpenAI Whisper (Base/Small/Medium/Large 本地模型)
+  - OpenAI Whisper API (雲端服務)
 - ⚡ **Smart Processing**: Automatic chunking for long audio files (30-second segments)
 - 🔧 **Error Recovery**: Comprehensive error handling with retry mechanisms and recovery suggestions
 - 💻 **Cross-platform**: Apple Silicon (MPS), CPU support with automatic fallback
 - 📝 **Complete Workflow**: Video → Audio → Transcription with validation at each step
+- 💰 **Cost Control**: API usage tracking and cost estimation for cloud services
 
-### New CLI Interface
+### Advanced CLI Interface
 - 🚀 **Easy to Use**: Simple command-line interface with automatic output path generation
 - ✅ **User-friendly**: Clear success/error messages with recovery suggestions
 - 🔍 **Format Detection**: Automatic file type detection and processing
 - 📊 **Progress Tracking**: Real-time processing feedback and status reporting
+- 🎯 **Model Selection**: Choose from 6 different AI models with `--model` parameter
+- 📋 **Model Management**: List models (`--list-models`) and view details (`--model-info`)
 
 ## System Requirements
 
@@ -60,7 +66,7 @@ uv sync --extra dev
 ## Quick Start
 
 ### 🚀 Simple Usage (Recommended)
-The new CLI interface makes transcription incredibly easy:
+The advanced CLI interface makes transcription incredibly easy:
 
 ```bash
 # Basic transcription - automatic output file generation
@@ -75,16 +81,52 @@ uv run python -m cli.main video.mp4
 uv run python -m cli.main audio.wav
 ```
 
+### 🎯 Model Selection
+Choose from 6 different AI models for optimal results:
+
+```bash
+# Use specific model
+uv run python -m cli.main audio.mp3 --model local_whisper_base
+
+# List all available models
+uv run python -m cli.main --list-models
+
+# Get detailed model information
+uv run python -m cli.main --model-info local_breeze
+
+# Use OpenAI API (requires OPENAI_API_KEY environment variable)
+export OPENAI_API_KEY="your-api-key"
+uv run python -m cli.main audio.mp3 --model openai_api
+```
+
+### 📋 Available Models
+
+| Model ID | Type | Description | Best For |
+|----------|------|-------------|----------|
+| `local_breeze` | 本地 | MediaTek Breeze-ASR-25 | 中文語音識別 (默認) |
+| `local_whisper_base` | 本地 | OpenAI Whisper Base | 輕量級多語言轉錄 |
+| `local_whisper_small` | 本地 | OpenAI Whisper Small | 平衡性能與準確度 |
+| `local_whisper_medium` | 本地 | OpenAI Whisper Medium | 高品質轉錄 |
+| `local_whisper_large` | 本地 | OpenAI Whisper Large | 最高準確度 |
+| `openai_api` | 雲端 | OpenAI Whisper API | 免安裝，按使用付費 |
+
 ### 📋 CLI Options
 ```bash
-# Show help
+# Show help and all available options
 uv run python -m cli.main --help
 
-# Show version
+# Show version information
 uv run python -m cli.main --version
 
-# Show supported formats
+# Show supported input formats
 uv run python -m cli.main --formats
+
+# Show system diagnostics
+uv run python -m cli.main --diagnostics
+
+# Model management commands
+uv run python -m cli.main --list-models              # List all models
+uv run python -m cli.main --model-info <model_id>    # Model details
 ```
 
 ### 🔄 Legacy Usage (Still Supported)
@@ -97,11 +139,12 @@ uv run python main.py
 
 ### 💡 Example Output
 ```bash
-$ uv run python -m cli.main presentation.webm
+$ uv run python -m cli.main presentation.webm --model local_whisper_base
 
 ✅ Transcription completed successfully
 Input: presentation.webm
 Output: presentation_transcription.txt
+Model: OpenAI Whisper Base (local)
 ```
 
 ## Development
@@ -170,11 +213,12 @@ The hooks will automatically:
 
 - **Audio Processing**: `torchaudio` + `soundfile`
 - **Video Conversion**: FFmpeg via `ffmpeg-python`
-- **Speech Recognition**: Hugging Face Transformers Whisper
+- **Speech Recognition**: Multi-model support (Hugging Face Transformers + OpenAI API)
 - **Hardware Acceleration**: Apple MPS (Metal Performance Shaders)
 - **Package Management**: `uv`
-- **Testing**: pytest with asyncio support
+- **Testing**: pytest with asyncio support (115+ test cases)
 - **Code Quality**: ruff, black, isort, mypy
+- **Model Management**: Dynamic model loading/unloading with service abstraction
 
 ### Module Structure
 
@@ -194,12 +238,19 @@ scrible-wise/
 │   ├── ffmpeg_checker.py           # FFmpeg dependency checker
 │   ├── file_detector.py            # File type detection
 │   └── error_recovery.py           # Error handling and retry logic
+├── config/                         # Configuration management
+│   └── model_config.py             # Model configuration and management
+├── services/                       # Transcription service abstraction
+│   ├── base.py                     # Base transcription service interface
+│   ├── local_breeze.py             # MediaTek Breeze service
+│   ├── local_whisper.py            # Local Whisper service
+│   └── openai_service.py           # OpenAI API service
 ├── exceptions/                     # Custom exception hierarchy
 │   ├── base.py                     # Base exception classes
 │   ├── conversion.py               # Conversion-related exceptions
 │   ├── validation.py               # Validation-related exceptions
 │   └── transcription.py            # Transcription-related exceptions
-└── tests/                          # Comprehensive test suites (102 tests)
+└── tests/                          # Comprehensive test suites (115+ tests)
     ├── test_*.py                   # Unit tests for all modules
     └── test_workflow_error_integration.py  # Integration tests
 ```
@@ -230,7 +281,7 @@ The system automatically:
 
 ## Testing
 
-The project includes comprehensive test coverage with 102 test cases:
+The project includes comprehensive test coverage with 115+ test cases covering all modules:
 
 ```bash
 # Run all tests
@@ -238,6 +289,12 @@ uv run pytest -v
 
 # Run specific test module
 uv run pytest tests/test_workflow_error_integration.py -v
+
+# Test specific model integration
+uv run pytest tests/test_workflow_model_integration.py -v
+
+# Test CLI model selection
+uv run pytest tests/test_cli_model_selection.py -v
 
 # Run with coverage
 uv run pytest --cov=. --cov-report=html
@@ -253,7 +310,9 @@ uv run pytest --cov=. --cov-report=html
 | `Audio loading failed` | Install audio libraries: `uv add soundfile librosa` |
 | `CUDA errors` | Program auto-switches to MPS/CPU - no action needed |
 | `Model download fails` | Check internet connection, model downloads on first run |
-| `Memory errors` | Try shorter audio files or reduce concurrent processing |
+| `Memory errors` | Try shorter audio files or use lighter models (base/small) |
+| `OpenAI API errors` | Set `OPENAI_API_KEY` environment variable |
+| `Unknown model` | Use `--list-models` to see available models |
 
 ### Getting Help
 

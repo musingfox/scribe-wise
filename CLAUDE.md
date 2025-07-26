@@ -21,6 +21,8 @@
 - `soundfile>=0.12.1`
 - `librosa>=0.10.0`
 - `ffmpeg-python>=0.2.0` - FFmpeg integration for video conversion
+- `openai>=1.97.1` - OpenAI API client for cloud transcription
+- `openai-whisper>=20250625` - Local OpenAI Whisper models
 - `numpy`
 
 ### Development Dependencies
@@ -67,6 +69,15 @@ uv run python -m cli.main input.webm
 # Run with custom output
 uv run python -m cli.main input.webm output.txt
 
+# Use specific model
+uv run python -m cli.main input.webm --model local_whisper_base
+
+# List available models
+uv run python -m cli.main --list-models
+
+# Get model information
+uv run python -m cli.main --model-info local_breeze
+
 # Show help and options
 uv run python -m cli.main --help
 
@@ -112,8 +123,10 @@ uv run pre-commit run --files main.py
 
 ### Testing Process
 - **Testing Framework**: pytest with asyncio and mocking support
-- **Test Coverage**: 102 test cases covering all modules and integration scenarios
+- **Test Coverage**: 115+ test cases covering all modules, services, and integration scenarios
 - **Test Execution**: `uv run pytest -v`
+- **Model Testing**: Comprehensive testing for all 6 transcription models
+- **CLI Testing**: Complete CLI interface and model selection testing
 - **Manual Testing**: Use `meeting.mp3` for legacy testing, any supported format for CLI testing
 - **Output Validation**: Check `transcription.txt` completeness and CLI status messages
 
@@ -152,6 +165,15 @@ scrible-wise/
 │   ├── ffmpeg_checker.py           # FFmpeg dependency checker
 │   ├── file_detector.py            # File type detection
 │   └── error_recovery.py           # Error handling and retry logic
+├── config/                         # Configuration management
+│   ├── __init__.py
+│   └── model_config.py             # Model configuration and management
+├── services/                       # Transcription service abstraction
+│   ├── __init__.py
+│   ├── base.py                     # Base transcription service interface
+│   ├── local_breeze.py             # MediaTek Breeze service
+│   ├── local_whisper.py            # Local Whisper service
+│   └── openai_service.py           # OpenAI API service
 ├── exceptions/                     # Custom exception hierarchy
 │   ├── __init__.py
 │   ├── base.py                     # Base exception classes
@@ -160,8 +182,10 @@ scrible-wise/
 │   └── transcription.py            # Transcription-related exceptions
 ├── tests/                          # Comprehensive test suites
 │   ├── __init__.py
-│   ├── test_*.py                   # Unit tests for all modules (102 total)
-│   └── test_workflow_error_integration.py  # Integration tests
+│   ├── test_*.py                   # Unit tests for all modules (115+ total)
+│   ├── test_workflow_error_integration.py  # Integration tests
+│   ├── test_workflow_model_integration.py  # Model integration tests
+│   └── test_cli_model_selection.py         # CLI model selection tests
 ├── PRD/                            # Product Requirements Documents
 │   └── webm-to-mp3-transcription.md
 ├── pyproject.toml                  # Project configuration
@@ -175,9 +199,13 @@ scrible-wise/
 ## Functional Modules
 
 ### Core Transcription Features
-- **Audio Loading**: `torchaudio.load()` supports MP3
+- **Audio Loading**: `torchaudio.load()` supports MP3 and other formats
 - **Audio Preprocessing**: Mono conversion, resampling to 16kHz
-- **Speech Recognition**: MediaTek Breeze-ASR-25 Whisper model
+- **Multi-Model Support**: 6 different transcription models (local & cloud)
+  - MediaTek Breeze-ASR-25 (默認中文模型)
+  - OpenAI Whisper Base/Small/Medium/Large (本地模型)
+  - OpenAI Whisper API (雲端服務)
+- **Service Architecture**: Unified interface with dynamic model loading
 - **Chunked Processing**: 30-second segment processing for long audio
 - **Result Merging**: Concatenates all segment transcription results
 
@@ -189,12 +217,14 @@ scrible-wise/
 - **Quality Levels**: Configurable bitrate (128k/160k/256k)
 - **Timeout Handling**: Configurable conversion timeouts
 
-### CLI Interface Features (New)
+### Advanced CLI Interface Features
 - **Simple Command**: `uv run python -m cli.main input.webm`
+- **Model Selection**: `--model` parameter for choosing transcription models
+- **Model Management**: `--list-models` and `--model-info` commands
 - **Automatic Output**: Auto-generates output filenames if not specified
 - **Format Support**: Handles all supported audio/video formats
 - **User-friendly Messages**: Clear success/error reporting with emojis
-- **Help System**: Built-in help, version, and format information
+- **Help System**: Built-in help, version, format, and diagnostics information
 
 ### Error Handling & Recovery (Phase 3)
 - **Custom Exception Hierarchy**: ScribbleWiseError, ConversionError, ValidationError, TranscriptionError
@@ -209,13 +239,15 @@ scrible-wise/
 - Model loading to corresponding device
 
 ### Module Architecture
-- **`cli/`**: User-friendly command-line interface and integration layer
-- **`transcription/`**: Complete workflow orchestration with error handling
+- **`cli/`**: Advanced command-line interface with model selection capabilities
+- **`transcription/`**: Complete workflow orchestration with multi-model support
+- **`config/`**: Model configuration management and service abstraction
+- **`services/`**: Transcription service implementations (local & cloud)
 - **`utils/`**: Core utility functions (FFmpeg, file detection, error recovery)
 - **`converters/`**: Media conversion logic with retry mechanisms
 - **`validators/`**: Audio file validation with detailed reporting
 - **`exceptions/`**: Custom exception hierarchy for precise error handling
-- **`tests/`**: Comprehensive test coverage with TDD methodology (102 test cases)
+- **`tests/`**: Comprehensive test coverage with TDD methodology (115+ test cases)
 
 ## Known Issues & Solutions
 
@@ -245,10 +277,12 @@ scrible-wise/
 
 ## Maintenance Notes
 
-1. **Dependency Updates**: Regularly check `transformers` and `torch` versions
-2. **Model Cache**: First run downloads model, requires internet connection
-3. **Disk Space**: Whisper model ~1-2GB
-4. **Compatibility**: Primarily optimized for macOS Apple Silicon
+1. **Dependency Updates**: Regularly check `transformers`, `torch`, and `openai` versions
+2. **Model Cache**: First run downloads models, requires internet connection
+3. **Disk Space**: Local models require ~1-2GB each, plan accordingly
+4. **API Keys**: Store OpenAI API key securely in environment variables
+5. **Compatibility**: Primarily optimized for macOS Apple Silicon
+6. **Model Selection**: Different models have varying memory requirements and accuracy
 
 ## Git Commit Convention
 
