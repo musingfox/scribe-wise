@@ -151,3 +151,6 @@ Thumbs.db
 *.mp4
 transcription.txt
 temp_*
+
+# PRD
+PRD/*
